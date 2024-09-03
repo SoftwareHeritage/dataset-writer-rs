@@ -9,6 +9,7 @@ rust-latest-all-features:
       paths:
         - target/
   script:
+    - rustup component add clippy
     - cargo check
     - cargo clippy
     - cargo build --all-features
