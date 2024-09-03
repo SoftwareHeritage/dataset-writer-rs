@@ -1,12 +1,13 @@
 [package]
 name = "dataset-writer"
 edition = "2021"
+version = "1.0.0"
 description = "Utilities to write CSV/Arrow/Parquet files concurrently"
 rust-version = "1.72"
 readme = "README.md"
 homepage = "https://gitlab.softwareheritage.org/swh/devel/dataset-writer-rs"
 repository = "https://gitlab.softwareheritage.org/swh/devel/dataset-writer-rs"
-keywords = ["dataset", "csv", "arrow", "arrow-ipc", "feather", "parquet"]
+keywords = ["dataset", "csv", "arrow-ipc", "feather", "parquet"]
 categories = ["database", "filesystem"]
 
 license = "GPL-3.0-or-later"
