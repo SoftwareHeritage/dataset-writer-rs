@@ -1,0 +1,60 @@
+stages:
+  - test
+
+rust-latest-all-features:
+  stage: test
+  image: docker.io/library/rust:latest
+  cache:
+    - key: rust-latest-all-features
+      paths:
+        - target/
+  script:
+    - cargo check
+    - cargo clippy
+    - cargo build --all-features
+    - cargo test --all-features
+
+rust-latest-default-features:
+  stage: test
+  image: docker.io/library/rust:latest
+  cache:
+    - key: rust-latest-default-features
+      paths:
+        - target/
+  script:
+    - cargo build
+    - cargo test
+
+rust-latest-no-features:
+  stage: test
+  image: docker.io/library/rust:latest
+  cache:
+    - key: rust-latest-no-features
+      paths:
+        - target/
+  script:
+    - cargo build --no-default-features
+    - cargo test --no-default-features
+
+rust-1.76-all-features:
+  stage: test
+  image: docker.io/library/rust:1.76
+  cache:
+    - key: rust-1.76-all-features
+      paths:
+        - target/
+  script:
+    - cargo build --all-features
+    - cargo test --all-features
+
+rust-nightly-all-features:
+  stage: test
+  image: docker.io/rustlang/rust:nightly
+  cache:
+    - key: rust-nightly-all-features
+      paths:
+        - target/
+  script:
+    - cargo build --all-features
+    - cargo test --all-features
+  allow_failure: true
