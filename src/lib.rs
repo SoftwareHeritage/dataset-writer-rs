@@ -4,7 +4,6 @@
 // See top-level LICENSE file for more information
 
 use std::cell::{RefCell, RefMut};
-use std::fs::File;
 use std::num::NonZeroU16;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -14,6 +13,11 @@ use anyhow::{ensure, Context, Result};
 use arrow::array::StructArray;
 use rayon::prelude::*;
 use thread_local::ThreadLocal;
+
+#[cfg(feature = "csv")]
+mod csv;
+#[cfg(feature = "csv")]
+pub use csv::*;
 
 #[cfg(feature = "arrow-ipc")]
 mod ipc;
@@ -217,35 +221,5 @@ impl<PartitionWriter: TableWriter + Send> TableWriter for PartitionedTableWriter
 impl<PartitionWriter: TableWriter + Send> PartitionedTableWriter<PartitionWriter> {
     pub fn partitions(&mut self) -> &mut [PartitionWriter] {
         &mut self.partition_writers
-    }
-}
-
-pub type CsvZstTableWriter<'a> = csv::Writer<zstd::stream::AutoFinishEncoder<'a, File>>;
-
-impl<'a> TableWriter for CsvZstTableWriter<'a> {
-    type Schema = ();
-    type CloseResult = ();
-    type Config = ();
-
-    fn new(mut path: PathBuf, _schema: Self::Schema, _config: ()) -> Result<Self> {
-        path.set_extension("csv.zst");
-        let file =
-            File::create(&path).with_context(|| format!("Could not create {}", path.display()))?;
-        let compression_level = 3;
-        let zstd_encoder = zstd::stream::write::Encoder::new(file, compression_level)
-            .with_context(|| format!("Could not create ZSTD encoder for {}", path.display()))?
-            .auto_finish();
-        Ok(csv::WriterBuilder::new()
-            .has_headers(true)
-            .terminator(csv::Terminator::CRLF)
-            .from_writer(zstd_encoder))
-    }
-
-    fn flush(&mut self) -> Result<()> {
-        self.flush().context("Could not flush CsvZst writer")
-    }
-
-    fn close(mut self) -> Result<()> {
-        self.flush().context("Could not close CsvZst writer")
     }
 }
