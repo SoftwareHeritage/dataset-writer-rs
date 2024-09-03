@@ -6,12 +6,10 @@
 use std::fs::File;
 use std::path::PathBuf;
 
-use anyhow::{Context, Result};
-
 use arrow::datatypes::Schema;
 use arrow::ipc::writer::FileWriter;
 
-use super::{StructArrayBuilder, TableWriter};
+use crate::{FlushError, NewDatasetError, NoError, StructArrayBuilder, TableWriter};
 
 /// Writer to a .arrow file, usable with [`ParallelDatasetWriter`](super::ParallelDatasetWriter)
 ///
@@ -29,17 +27,17 @@ impl<Builder: Default + StructArrayBuilder> TableWriter for ArrowTableWriter<Bui
     type CloseResult = ();
     type Config = Option<usize>;
 
-    fn new(mut path: PathBuf, schema: Self::Schema, config: Option<usize>) -> Result<Self> {
+    type NewDatasetError = arrow::error::ArrowError;
+    type FlushError = Builder::FinishError;
+
+    fn new(
+        mut path: PathBuf,
+        schema: Self::Schema,
+        config: Option<usize>,
+    ) -> Result<Self, NewDatasetError<Self::NewDatasetError>> {
         path.set_extension("arrow");
-        let file =
-            File::create(&path).with_context(|| format!("Could not create {}", path.display()))?;
-        let file_writer = FileWriter::try_new(file, &schema).with_context(|| {
-            format!(
-                "Could not create writer for {} with schema {}",
-                path.display(),
-                schema
-            )
-        })?;
+        let file = File::create(&path)?;
+        let file_writer = FileWriter::try_new(file, &schema).map_err(NewDatasetError::Schema)?;
 
         Ok(ArrowTableWriter {
             path,
@@ -49,26 +47,27 @@ impl<Builder: Default + StructArrayBuilder> TableWriter for ArrowTableWriter<Bui
         })
     }
 
-    fn flush(&mut self) -> Result<()> {
+    fn flush(&mut self) -> Result<(), FlushError<Self::FlushError>> {
         let mut tmp = Builder::default();
         std::mem::swap(&mut tmp, &mut self.builder);
-        let struct_array = tmp.finish()?;
-        self.file_writer
-            .write(&struct_array.into())
-            .with_context(|| format!("Could not write to {}", self.path.display()))
+        let struct_array = tmp.finish().map_err(FlushError::BuildArray)?;
+        self.file_writer.write(&struct_array.into()).map_err(FlushError::Serialize)?;
+        Ok(())
     }
 
-    fn close(mut self) -> Result<()> {
+    fn close(mut self) -> Result<(), FlushError<Self::FlushError>> {
         self.flush()?;
         self.file_writer
             .finish()
-            .with_context(|| format!("Could not close {}", self.path.display()))
+            .map_err(FlushError::Serialize)
     }
 }
 
 impl<Builder: Default + StructArrayBuilder> ArrowTableWriter<Builder> {
     /// Flushes the internal buffer is too large, then returns the array builder.
-    pub fn builder(&mut self) -> Result<&mut Builder> {
+    pub fn builder(
+        &mut self,
+    ) -> Result<&mut Builder, FlushError<<Self as TableWriter>::FlushError>> {
         if self.builder.len() >= self.flush_threshold {
             self.flush()?;
         }
@@ -82,7 +81,6 @@ impl<Builder: Default + StructArrayBuilder> Drop for ArrowTableWriter<Builder> {
         self.flush().unwrap();
         self.file_writer
             .finish()
-            .with_context(|| format!("Could not close {}", self.path.display()))
-            .unwrap();
+            .expect(&format!("Could not finish {}", self.path.display()));
     }
 }

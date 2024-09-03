@@ -19,7 +19,7 @@ parquet = ["arrow", "dep:parquet", "parquet/zstd"]
 csv = ["dep:csv", "dep:zstd"]
 
 [dependencies]
-anyhow = "1.0.79" 
+thiserror = "1.0.51"
 rayon =  "1.9.0"
 thread_local = "1.1.7"
 

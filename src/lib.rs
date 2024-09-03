@@ -4,11 +4,11 @@
 // See top-level LICENSE file for more information
 
 use std::cell::{RefCell, RefMut};
+use std::error::Error;
 use std::num::NonZeroU16;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicU64, Ordering};
 
-use anyhow::{ensure, Context, Result};
 #[cfg(feature = "arrow")]
 use arrow::array::StructArray;
 use rayon::prelude::*;
@@ -29,14 +29,38 @@ mod parquet;
 #[cfg(feature = "parquet")]
 pub use parquet::*;
 
+#[derive(thiserror::Error, Debug)]
+pub enum NewDatasetError<SchemaError: Error = NoError> {
+    #[error("I/O error: {0}")]
+    Io(#[from] std::io::Error),
+    #[error("I/O error: {0}")]
+    Schema(SchemaError),
+}
+
+#[derive(thiserror::Error, Debug)]
+pub enum FlushError<FinishError: Error = NoError, SerializationError: Error = NoError> {
+    #[error("I/O error: {0}")]
+    Io(#[from] std::io::Error),
+    #[error("Could not finish building struct: {0}")]
+    BuildArray(FinishError),
+    #[error("Could not serialize: {0}")]
+    Serialize(SerializationError),
+}
+
+/// Return type where an `Error` cannot happen
+#[derive(thiserror::Error, Debug)]
+pub enum NoError {}
+
 #[cfg(feature = "arrow")]
 #[allow(clippy::len_without_is_empty)]
 pub trait StructArrayBuilder {
+    type FinishError: Error;
+
     /// Number of rows currently in the buffer (not capacity)
     fn len(&self) -> usize;
     /// Number of bytes currently in the buffer (not capacity)
     fn buffer_size(&self) -> usize;
-    fn finish(&mut self) -> Result<StructArray>;
+    fn finish(&mut self) -> Result<StructArray, Self::FinishError>;
 }
 
 /// Writes a set of files (called tables here) to a directory.
@@ -49,9 +73,8 @@ pub struct ParallelDatasetWriter<W: TableWriter + Send> {
 }
 
 impl<W: TableWriter<Schema = (), Config = ()> + Send> ParallelDatasetWriter<W> {
-    pub fn new(path: PathBuf) -> Result<Self> {
-        std::fs::create_dir_all(&path)
-            .with_context(|| format!("Could not create {}", path.display()))?;
+    pub fn new(path: PathBuf) -> Result<Self, NewDatasetError<W::NewDatasetError>> {
+        std::fs::create_dir_all(&path).into()?;
         Ok(ParallelDatasetWriter {
             num_files: AtomicU64::new(0),
             schema: (),
@@ -66,9 +89,8 @@ impl<W: TableWriter + Send> ParallelDatasetWriter<W>
 where
     W::Config: Default,
 {
-    pub fn with_schema(path: PathBuf, schema: W::Schema) -> Result<Self> {
-        std::fs::create_dir_all(&path)
-            .with_context(|| format!("Could not create {}", path.display()))?;
+    pub fn with_schema(path: PathBuf, schema: W::Schema) -> Result<Self, W::NewDatasetError> {
+        std::fs::create_dir_all(&path).into()?;
         Ok(ParallelDatasetWriter {
             num_files: AtomicU64::new(0),
             schema,
@@ -78,7 +100,7 @@ where
         })
     }
 
-    fn get_new_seq_writer(&self) -> Result<RefCell<W>> {
+    fn get_new_seq_writer(&self) -> Result<RefCell<W>, W::NewDatasetError> {
         let path = self
             .path
             .join(self.num_files.fetch_add(1, Ordering::Relaxed).to_string());
@@ -95,14 +117,14 @@ where
     ///
     /// When called from a thread holding another reference to a sequential writer
     /// of this dataset.
-    pub fn get_thread_writer(&self) -> Result<RefMut<W>> {
+    pub fn get_thread_writer(&self) -> Result<RefMut<W>, W::NewDatasetError> {
         self.writers
             .get_or_try(|| self.get_new_seq_writer())
             .map(|writer| writer.borrow_mut())
     }
 
     /// Flushes all underlying writers
-    pub fn flush(&mut self) -> Result<()> {
+    pub fn flush(&mut self) -> Result<(), FlushError<W::FlushError>> {
         self.writers
             .iter_mut()
             .collect::<Vec<_>>()
@@ -113,7 +135,7 @@ where
     }
 
     /// Closes all underlying writers
-    pub fn close(mut self) -> Result<Vec<W::CloseResult>> {
+    pub fn close(mut self) -> Result<Vec<W::CloseResult>, FlushError<W::FlushError>> {
         let mut tmp = ThreadLocal::new();
         std::mem::swap(&mut tmp, &mut self.writers);
         tmp.into_iter()
@@ -141,14 +163,21 @@ pub trait TableWriter {
     type CloseResult: Send;
     type Config: Clone;
 
-    fn new(path: PathBuf, schema: Self::Schema, config: Self::Config) -> Result<Self>
+    type NewDatasetError: Error;
+    type FlushError: Error;
+
+    fn new(
+        path: PathBuf,
+        schema: Self::Schema,
+        config: Self::Config,
+    ) -> Result<Self, NewDatasetError<Self::NewDatasetError>>
     where
         Self: Sized;
 
     /// Calls `.into()` on the internal builder, and writes its result to disk.
-    fn flush(&mut self) -> Result<()>;
+    fn flush(&mut self) -> Result<(), FlushError<Self::FlushError>>;
 
-    fn close(self) -> Result<Self::CloseResult>;
+    fn close(self) -> Result<Self::CloseResult, FlushError<Self::FlushError>>;
 }
 
 /// Wraps `N` [`TableWriter`] in such a way that they each write to `base/0/x.parquet`,
@@ -168,15 +197,18 @@ impl<PartitionWriter: TableWriter + Send> TableWriter for PartitionedTableWriter
     type CloseResult = Vec<PartitionWriter::CloseResult>;
     type Config = PartitionWriter::Config;
 
+    type NewDatasetError = PartitionWriter::NewDatasetError;
+    type FlushError = PartitionWriter::FlushError;
+
     fn new(
         mut path: PathBuf,
         (partition_column, num_partitions, schema): Self::Schema,
         config: Self::Config,
-    ) -> Result<Self> {
+    ) -> Result<Self, NewDatasetError<Self::NewDatasetError>> {
         // Remove the last part of the path (the thread id), so we can insert the
         // partition number between the base path and the thread id.
         let thread_id = path.file_name().map(|p| p.to_owned());
-        ensure!(
+        assert!(
             path.pop(),
             "Unexpected root path for partitioned writer: {}",
             path.display()
@@ -191,9 +223,7 @@ impl<PartitionWriter: TableWriter + Send> TableWriter for PartitionedTableWriter
                         // Partitioning disabled
                         path.to_owned()
                     };
-                    std::fs::create_dir_all(&partition_path).with_context(|| {
-                        format!("Could not create {}", partition_path.display())
-                    })?;
+                    std::fs::create_dir_all(&partition_path).into()?;
                     PartitionWriter::new(
                         partition_path.join(&thread_id),
                         schema.clone(),
@@ -204,13 +234,13 @@ impl<PartitionWriter: TableWriter + Send> TableWriter for PartitionedTableWriter
         })
     }
 
-    fn flush(&mut self) -> Result<()> {
+    fn flush(&mut self) -> Result<(), FlushError<Self::FlushError>> {
         self.partition_writers
             .par_iter_mut()
             .try_for_each(|writer| writer.flush())
     }
 
-    fn close(self) -> Result<Self::CloseResult> {
+    fn close(self) -> Result<Self::CloseResult, FlushError<Self::FlushError>> {
         self.partition_writers
             .into_par_iter()
             .map(|writer| writer.close())

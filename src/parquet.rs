@@ -7,14 +7,12 @@ use std::fs::File;
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use anyhow::{Context, Result};
-
 use arrow::datatypes::Schema;
 use parquet::arrow::ArrowWriter as ParquetWriter;
 use parquet::file::properties::WriterProperties;
 use parquet::format::FileMetaData;
 
-use super::{StructArrayBuilder, TableWriter};
+use super::{FlushError, NewDatasetError, NoError, StructArrayBuilder, TableWriter};
 
 #[derive(Debug, Default, Clone)]
 pub struct ParquetTableWriterConfig {
@@ -55,6 +53,9 @@ impl<Builder: Default + StructArrayBuilder> TableWriter for ParquetTableWriter<B
     type CloseResult = FileMetaData;
     type Config = ParquetTableWriterConfig;
 
+    type NewDatasetError = arrow::error::ArrowError;
+    type FlushError = NoError;
+
     fn new(
         mut path: PathBuf,
         (schema, properties): Self::Schema,
@@ -62,19 +63,11 @@ impl<Builder: Default + StructArrayBuilder> TableWriter for ParquetTableWriter<B
             autoflush_row_group_len,
             autoflush_buffer_size,
         }: Self::Config,
-    ) -> Result<Self> {
+    ) -> Result<Self, NewDatasetError<Self::NewDatasetError>> {
         path.set_extension("parquet");
-        let file =
-            File::create(&path).with_context(|| format!("Could not create {}", path.display()))?;
-        let file_writer = ParquetWriter::try_new(file, schema.clone(), Some(properties.clone()))
-            .with_context(|| {
-                format!(
-                    "Could not create writer for {} with schema {} and properties {:?}",
-                    path.display(),
-                    schema,
-                    properties.clone()
-                )
-            })?;
+        let file = File::create(&path).into()?;
+        let file_writer =
+            ParquetWriter::try_new(file, schema.clone(), Some(properties.clone())).into()?;
 
         Ok(ParquetTableWriter {
             path,
@@ -90,7 +83,7 @@ impl<Builder: Default + StructArrayBuilder> TableWriter for ParquetTableWriter<B
         })
     }
 
-    fn flush(&mut self) -> Result<()> {
+    fn flush(&mut self) -> Result<(), FlushError<Self::FlushError>> {
         // Get built array
         let struct_array = self.builder.finish()?;
 
@@ -100,27 +93,25 @@ impl<Builder: Default + StructArrayBuilder> TableWriter for ParquetTableWriter<B
             .expect("File writer is unexpectedly None");
 
         // Write it
-        file_writer
-            .write(&struct_array.into())
-            .with_context(|| format!("Could not write to {}", self.path.display()))?;
-        file_writer
-            .flush()
-            .with_context(|| format!("Could not flush to {}", self.path.display()))
+        file_writer.write(&struct_array.into()).into()?;
+        file_writer.flush().into()?;
     }
 
-    fn close(mut self) -> Result<FileMetaData> {
-        self.flush()?;
+    fn close(mut self) -> Result<FileMetaData, FlushError<Self::FlushError>> {
+        self.flush().into()?;
         self.file_writer
             .take()
             .expect("File writer is unexpectedly None")
             .close()
-            .with_context(|| format!("Could not close {}", self.path.display()))
+            .into()
     }
 }
 
 impl<Builder: Default + StructArrayBuilder> ParquetTableWriter<Builder> {
     /// Flushes the internal buffer is too large, then returns the array builder.
-    pub fn builder(&mut self) -> Result<&mut Builder> {
+    pub fn builder(
+        &mut self,
+    ) -> Result<&mut Builder, FlushError<<Self as TableWriter>::FlushError>> {
         if self.builder.len() >= self.autoflush_row_group_len {
             self.flush()?;
         }

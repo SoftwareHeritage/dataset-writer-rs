@@ -6,9 +6,7 @@
 use std::fs::File;
 use std::path::PathBuf;
 
-use anyhow::{Context, Result};
-
-use crate::TableWriter;
+use crate::{FlushError, NewDatasetError, NoError, TableWriter};
 
 pub type CsvZstTableWriter<'a> = csv::Writer<zstd::stream::AutoFinishEncoder<'a, File>>;
 
@@ -17,13 +15,18 @@ impl<'a> TableWriter for CsvZstTableWriter<'a> {
     type CloseResult = ();
     type Config = ();
 
-    fn new(mut path: PathBuf, _schema: Self::Schema, _config: ()) -> Result<Self> {
+    type NewDatasetError = NoError;
+    type FlushError = NoError;
+
+    fn new(
+        mut path: PathBuf,
+        _schema: Self::Schema,
+        _config: (),
+    ) -> Result<Self, NewDatasetError<Self::NewDatasetError>> {
         path.set_extension("csv.zst");
-        let file =
-            File::create(&path).with_context(|| format!("Could not create {}", path.display()))?;
+        let file: File = File::create(&path)?;
         let compression_level = 3;
-        let zstd_encoder = zstd::stream::write::Encoder::new(file, compression_level)
-            .with_context(|| format!("Could not create ZSTD encoder for {}", path.display()))?
+        let zstd_encoder = zstd::stream::write::Encoder::new(file, compression_level)?
             .auto_finish();
         Ok(csv::WriterBuilder::new()
             .has_headers(true)
@@ -31,11 +34,11 @@ impl<'a> TableWriter for CsvZstTableWriter<'a> {
             .from_writer(zstd_encoder))
     }
 
-    fn flush(&mut self) -> Result<()> {
-        self.flush().context("Could not flush CsvZst writer")
+    fn flush(&mut self) -> Result<(), FlushError<Self::FlushError>> {
+        Ok(self.flush()?)
     }
 
-    fn close(mut self) -> Result<()> {
-        self.flush().context("Could not close CsvZst writer")
+    fn close(mut self) -> Result<(), FlushError<Self::FlushError>> {
+        Ok(self.flush()?)
     }
 }
