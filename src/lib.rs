@@ -3,6 +3,8 @@
 // License: GNU General Public License version 3, or any later version
 // See top-level LICENSE file for more information
 
+#![doc = include_str!("../README.md")]
+
 use std::cell::{RefCell, RefMut};
 use std::num::NonZeroU16;
 use std::path::PathBuf;
