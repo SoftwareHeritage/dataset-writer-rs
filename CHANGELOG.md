@@ -1,3 +1,16 @@
+# v1.1.0
+
+*2024-10-29*
+
+New feature:
+
+* Add support for UTF8 partitioning columns
+
+Internal:
+
+* Move PartitionedTableWriter to its own module
+
+
 # v1.0.1
 
 *2024-09-12*
