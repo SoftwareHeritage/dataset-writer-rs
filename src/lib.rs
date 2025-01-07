@@ -14,6 +14,8 @@ use anyhow::{Context, Result};
 use arrow::array::StructArray;
 use rayon::prelude::*;
 use thread_local::ThreadLocal;
+#[cfg(feature = "arrow")]
+pub use arrow;
 
 #[cfg(feature = "csv")]
 mod csv;
@@ -26,9 +28,9 @@ mod ipc;
 pub use ipc::*;
 
 #[cfg(feature = "parquet")]
-mod parquet;
+mod parquet_;
 #[cfg(feature = "parquet")]
-pub use parquet::*;
+pub use parquet_::*;
 
 mod partitioned;
 pub use partitioned::*;

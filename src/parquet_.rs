@@ -13,6 +13,7 @@ use arrow::datatypes::Schema;
 use parquet::arrow::ArrowWriter as ParquetWriter;
 use parquet::file::properties::WriterProperties;
 use parquet::format::FileMetaData;
+pub use parquet;
 
 use super::{StructArrayBuilder, TableWriter};
 
