@@ -41,12 +41,15 @@ pub struct ParquetTableWriterConfig {
 /// `Builder` should follow the pattern documented by
 /// [`arrow::builder`](https://docs.rs/arrow/latest/arrow/array/builder/index.html)
 pub struct ParquetTableWriter<Builder: Default + StructArrayBuilder> {
-    path: PathBuf,
+    base_path: PathBuf,
     /// See [`ParquetTableWriterConfig::autoflush_row_group_len`]
     pub autoflush_row_group_len: usize,
     /// See [`ParquetTableWriterConfig::autoflush_buffer_size`]
     pub autoflush_buffer_size: Option<usize>,
-    file_writer: Option<ParquetWriter<File>>, // None only between .close() call and Drop
+    schema: Arc<Schema>,
+    properties: WriterProperties,
+    file_writer: Option<(PathBuf, ParquetWriter<File>)>, // None only while initializing, and between .close() call and Drop
+    num_written_files: u64,
     builder: Builder,
 }
 
@@ -56,28 +59,17 @@ impl<Builder: Default + StructArrayBuilder> TableWriter for ParquetTableWriter<B
     type Config = ParquetTableWriterConfig;
 
     fn new(
-        mut path: PathBuf,
+        path: PathBuf,
         (schema, properties): Self::Schema,
         ParquetTableWriterConfig {
             autoflush_row_group_len,
             autoflush_buffer_size,
         }: Self::Config,
     ) -> Result<Self> {
-        path.set_extension("parquet");
-        let file =
-            File::create(&path).with_context(|| format!("Could not create {}", path.display()))?;
-        let file_writer = ParquetWriter::try_new(file, schema.clone(), Some(properties.clone()))
-            .with_context(|| {
-                format!(
-                    "Could not create writer for {} with schema {} and properties {:?}",
-                    path.display(),
-                    schema,
-                    properties.clone()
-                )
-            })?;
+        let base_path = path;
 
-        Ok(ParquetTableWriter {
-            path,
+        let mut writer = ParquetTableWriter {
+            base_path,
             // See above, we need to make sure the user does not write more than
             // `properties.max_row_group_size()` minus `autoflush_row_group_len` rows between
             // two calls to self.builder() to avoid uneven group sizes. This seems
@@ -85,16 +77,20 @@ impl<Builder: Default + StructArrayBuilder> TableWriter for ParquetTableWriter<B
             autoflush_row_group_len: autoflush_row_group_len
                 .unwrap_or(properties.max_row_group_size() * 9 / 10),
             autoflush_buffer_size,
-            file_writer: Some(file_writer),
+            schema, properties,
+            file_writer: None,
+            num_written_files: 0,
             builder: Builder::default(),
-        })
+        };
+        writer.new_file_writer()?;
+        Ok(writer)
     }
 
     fn flush(&mut self) -> Result<()> {
         // Get built array
         let struct_array = self.builder.finish()?;
 
-        let file_writer = self
+        let (path, file_writer) = self
             .file_writer
             .as_mut()
             .expect("File writer is unexpectedly None");
@@ -102,23 +98,62 @@ impl<Builder: Default + StructArrayBuilder> TableWriter for ParquetTableWriter<B
         // Write it
         file_writer
             .write(&struct_array.into())
-            .with_context(|| format!("Could not write to {}", self.path.display()))?;
+            .with_context(|| format!("Could not write to {}", path.display()))?;
         file_writer
             .flush()
-            .with_context(|| format!("Could not flush to {}", self.path.display()))
+            .with_context(|| format!("Could not flush to {}", path.display()))?;
+
+        if file_writer.flushed_row_groups().len() >= (i16::MAX - 2).try_into().expect("i16 overflowed usize") {
+            // Parquet does not support more than 32767 row groups per file, so we need to open a
+            // new file.
+            self.new_file_writer()?;
+        }
+
+        Ok(())
     }
 
     fn close(mut self) -> Result<FileMetaData> {
         self.flush()?;
-        self.file_writer
+        let (path, file_writer) = self.file_writer
             .take()
-            .expect("File writer is unexpectedly None")
+            .expect("File writer is unexpectedly None");
+        file_writer
             .close()
-            .with_context(|| format!("Could not close {}", self.path.display()))
+            .with_context(|| format!("Could not close {}", path.display()))
     }
 }
 
 impl<Builder: Default + StructArrayBuilder> ParquetTableWriter<Builder> {
+    fn new_file_writer(&mut self) -> Result<()> {
+        // Close previous writer, if any.
+        if let Some((path, file_writer)) = self.file_writer.take() {
+            file_writer.close().with_context(|| format!("Could not close {}", path.display()))?;
+            self.num_written_files += 1;
+        }
+
+        let mut path = if self.num_written_files == 0 {
+            self.base_path.to_owned()
+        } else {
+            let mut file_name = self.base_path.file_name().expect("file has no name").to_owned();
+            file_name.push(format!("_{}", self.num_written_files));
+            self.base_path.with_file_name(&file_name)
+        };
+        path.set_extension("parquet");
+        let file =
+            File::create(&path).with_context(|| format!("Could not create {}", path.display()))?;
+        let file_writer = ParquetWriter::try_new(file, self.schema.clone(), Some(self.properties.clone()))
+            .with_context(|| {
+                format!(
+                    "Could not create writer for {} with schema {} and properties {:?}",
+                    path.display(),
+                    self.schema,
+                    self.properties.clone()
+                )
+            })?;
+
+        self.file_writer = Some((path, file_writer));
+        Ok(())
+    }
     /// Flushes the internal buffer is too large, then returns the array builder.
     pub fn builder(&mut self) -> Result<&mut Builder> {
         if self.builder.len() >= self.autoflush_row_group_len {
@@ -138,11 +173,12 @@ impl<Builder: Default + StructArrayBuilder> Drop for ParquetTableWriter<Builder>
     fn drop(&mut self) {
         if self.file_writer.is_some() {
             self.flush().unwrap();
-            self.file_writer
+            let (path, file_writer) = self.file_writer
                 .take()
-                .unwrap()
+                .unwrap();
+            file_writer
                 .close()
-                .with_context(|| format!("Could not close {}", self.path.display()))
+                .with_context(|| format!("Could not close {}", path.display()))
                 .unwrap();
         }
     }
