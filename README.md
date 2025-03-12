@@ -26,6 +26,32 @@ let mut dataset_writer = ParallelDatasetWriter::<CsvZstTableWriter>::new(tmp_dir
     .expect("Failed to write table");
 ```
 
+## Plain text example
+
+```
+use std::io::Write;
+
+use tempfile::TempDir;
+use rayon::prelude::*;
+
+use dataset_writer::*;
+
+let tmp_dir = TempDir::new().unwrap();
+
+let mut dataset_writer = ParallelDatasetWriter::<PlainZstTableWriter>::new(tmp_dir.path().join("dataset"))
+    .expect("Could not create directory");
+
+(0..100000)
+    .into_par_iter()
+    .try_for_each_init(
+        || dataset_writer.get_thread_writer().unwrap(),
+        |table_writer, number| -> Result<(), std::io::Error> {
+            table_writer.write_all(format!("{}\n", number).as_bytes())
+        }
+    )
+    .expect("Failed to write table");
+```
+
 ## Parquet example
 
 ```
