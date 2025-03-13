@@ -20,7 +20,7 @@ pub struct PlainZstTableWriterConfig {
 impl Default for PlainZstTableWriterConfig {
     fn default() -> Self {
         PlainZstTableWriterConfig {
-            extension: ".zst".to_owned(),
+            extension: "zst".to_owned(),
             compression_level: 3,
         }
     }
