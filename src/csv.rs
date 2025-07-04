@@ -12,7 +12,7 @@ use crate::TableWriter;
 
 pub type CsvZstTableWriter<'a> = csv::Writer<zstd::stream::AutoFinishEncoder<'a, File>>;
 
-impl<'a> TableWriter for CsvZstTableWriter<'a> {
+impl TableWriter for CsvZstTableWriter<'_> {
     type Schema = ();
     type CloseResult = ();
     type Config = ();

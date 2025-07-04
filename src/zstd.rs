@@ -28,7 +28,7 @@ impl Default for PlainZstTableWriterConfig {
 
 pub type PlainZstTableWriter<'a> = zstd::stream::AutoFinishEncoder<'a, File>;
 
-impl<'a> TableWriter for PlainZstTableWriter<'a> {
+impl TableWriter for PlainZstTableWriter<'_> {
     type Schema = ();
     type CloseResult = ();
     type Config = PlainZstTableWriterConfig;
