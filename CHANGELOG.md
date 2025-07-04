@@ -1,3 +1,21 @@
+# v1.2.0
+
+*2025-07-04*
+
+New features:
+
+* Re-export arrow and parquet
+* Add support for arrow 54 and 55
+
+Fixes:
+
+* Zstd writer: avoid double dot "..zst" extension
+
+Internal:
+
+* Bump minimal tested version from 1.76 to 1.81 because arrow 55 requires Rust 1.81
+* Fixes for Clippy 1.88
+
 # v1.1.0
 
 *2024-10-29*
