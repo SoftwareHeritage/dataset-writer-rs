@@ -33,6 +33,11 @@ pub use parquet::*;
 mod partitioned;
 pub use partitioned::*;
 
+#[cfg(feature = "zstd")]
+mod zstd;
+#[cfg(feature = "zstd")]
+pub use zstd::*;
+
 #[cfg(feature = "arrow")]
 #[allow(clippy::len_without_is_empty)]
 pub trait StructArrayBuilder {
@@ -52,7 +57,10 @@ pub struct ParallelDatasetWriter<W: TableWriter + Send> {
     pub config: W::Config,
 }
 
-impl<W: TableWriter<Schema = (), Config = ()> + Send> ParallelDatasetWriter<W> {
+impl<W: TableWriter<Schema = ()> + Send> ParallelDatasetWriter<W>
+where
+    W::Config: Default,
+{
     pub fn new(path: PathBuf) -> Result<Self> {
         std::fs::create_dir_all(&path)
             .with_context(|| format!("Could not create {}", path.display()))?;
@@ -61,7 +69,7 @@ impl<W: TableWriter<Schema = (), Config = ()> + Send> ParallelDatasetWriter<W> {
             schema: (),
             path,
             writers: ThreadLocal::new(),
-            config: (),
+            config: W::Config::default(),
         })
     }
 }
