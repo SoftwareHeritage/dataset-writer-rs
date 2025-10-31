@@ -37,11 +37,11 @@ rust-latest-no-features:
     - cargo build --no-default-features
     - cargo test --no-default-features
 
-rust-1.81-all-features:
+rust-1.85-all-features:
   stage: test
-  image: docker.io/library/rust:1.81
+  image: docker.io/library/rust:1.85
   cache:
-    - key: rust-1.81-all-features
+    - key: rust-1.85-all-features
       paths:
         - target/
   script:

@@ -12,7 +12,7 @@ use anyhow::{Context, Result};
 use arrow::datatypes::Schema;
 use parquet::arrow::ArrowWriter as ParquetWriter;
 use parquet::file::properties::WriterProperties;
-use parquet::format::FileMetaData;
+use parquet::file::metadata::ParquetMetaData;
 pub use parquet;
 
 use super::{StructArrayBuilder, TableWriter};
@@ -56,7 +56,7 @@ pub struct ParquetTableWriter<Builder: Default + StructArrayBuilder> {
 
 impl<Builder: Default + StructArrayBuilder> TableWriter for ParquetTableWriter<Builder> {
     type Schema = (Arc<Schema>, WriterProperties);
-    type CloseResult = FileMetaData;
+    type CloseResult = ParquetMetaData;
     type Config = ParquetTableWriterConfig;
 
     fn new(
@@ -113,7 +113,7 @@ impl<Builder: Default + StructArrayBuilder> TableWriter for ParquetTableWriter<B
         Ok(())
     }
 
-    fn close(mut self) -> Result<FileMetaData> {
+    fn close(mut self) -> Result<ParquetMetaData> {
         self.flush()?;
         let (path, file_writer) = self.file_writer
             .take()
