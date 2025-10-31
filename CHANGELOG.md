@@ -1,3 +1,15 @@
+# v2.0.0
+
+*2025-10-31*
+
+Breaking change:
+
+* Remove support for parquet <57
+
+New features:
+
+* Add support for arrow 56 and 57 (and support for parquet 57)
+
 # v1.2.0
 
 *2025-07-04*
