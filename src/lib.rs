@@ -47,6 +47,9 @@ pub trait StructArrayBuilder {
     fn len(&self) -> usize;
     /// Number of bytes currently in the buffer (not capacity)
     fn buffer_size(&self) -> usize;
+    /// Empties the builder and returns columnar arrays with all values written so far
+    ///
+    /// This method usually should not be called outside table writers.
     fn finish(&mut self) -> Result<StructArray>;
 }
 
