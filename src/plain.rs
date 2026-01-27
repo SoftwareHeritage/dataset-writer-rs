@@ -1,4 +1,4 @@
-// Copyright (C) 2024-2026  The Software Heritage developers
+// Copyright (C) 2026  The Software Heritage developers
 // See the AUTHORS file at the top-level directory of this distribution
 // License: GNU General Public License version 3, or any later version
 // See top-level LICENSE file for more information
@@ -11,58 +11,52 @@ use anyhow::{Context, Result};
 
 use crate::TableWriter;
 
-pub type CsvZstTableWriter<'a> = csv::Writer<zstd::stream::AutoFinishEncoder<'a, File>>;
+pub type PlainTextZstTableWriter<'a> = BufWriter<zstd::stream::AutoFinishEncoder<'a, File>>;
 
-impl TableWriter for CsvZstTableWriter<'_> {
+impl TableWriter for PlainTextZstTableWriter<'_> {
     type Schema = ();
     type CloseResult = ();
     type Config = ();
 
     fn new(mut path: PathBuf, _schema: Self::Schema, _config: ()) -> Result<Self> {
-        path.set_extension("csv.zst");
+        path.set_extension("txt.zst");
         let file =
             File::create(&path).with_context(|| format!("Could not create {}", path.display()))?;
         let compression_level = 3;
         let zstd_encoder = zstd::stream::write::Encoder::new(file, compression_level)
             .with_context(|| format!("Could not create ZSTD encoder for {}", path.display()))?
             .auto_finish();
-        Ok(csv::WriterBuilder::new()
-            .has_headers(true)
-            .terminator(csv::Terminator::CRLF)
-            .from_writer(zstd_encoder))
+        Ok(BufWriter::new(zstd_encoder))
     }
 
     fn flush(&mut self) -> Result<()> {
-        self.flush().context("Could not flush CsvZst writer")
+        <_ as std::io::Write>::flush(self).context("Could not flush PlainTextZst writer")
     }
 
     fn close(mut self) -> Result<()> {
-        self.flush().context("Could not close CsvZst writer")
+        self.flush().context("Could not close PlainTextZst writer")
     }
 }
 
-pub type CsvTableWriter = csv::Writer<BufWriter<File>>;
+pub type PlainTextTableWriter = BufWriter<File>;
 
-impl TableWriter for CsvTableWriter {
+impl TableWriter for PlainTextTableWriter {
     type Schema = ();
     type CloseResult = ();
     type Config = ();
 
     fn new(mut path: PathBuf, _schema: Self::Schema, _config: ()) -> Result<Self> {
-        path.set_extension("csv");
+        path.set_extension("txt");
         let file =
             File::create(&path).with_context(|| format!("Could not create {}", path.display()))?;
-        Ok(csv::WriterBuilder::new()
-            .has_headers(true)
-            .terminator(csv::Terminator::CRLF)
-            .from_writer(BufWriter::new(file)))
+        Ok(BufWriter::new(file))
     }
 
     fn flush(&mut self) -> Result<()> {
-        self.flush().context("Could not flush Csv writer")
+        <_ as std::io::Write>::flush(self).context("Could not flush PlainText writer")
     }
 
     fn close(mut self) -> Result<()> {
-        self.flush().context("Could not close Csv writer")
+        self.flush().context("Could not close PlainText writer")
     }
 }

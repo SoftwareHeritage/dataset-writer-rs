@@ -35,6 +35,9 @@ pub use parquet_::*;
 mod partitioned;
 pub use partitioned::*;
 
+mod plain;
+pub use plain::*;
+
 #[cfg(feature = "zstd")]
 mod zstd;
 #[cfg(feature = "zstd")]
