@@ -17,7 +17,7 @@ default = ["csv"]
 arrow = ["dep:arrow", "dep:arrow-schema", "dep:arrow-array"]
 arrow-ipc = ["arrow", "arrow/ipc"]
 parquet = ["arrow", "dep:parquet", "parquet/zstd"]
-csv = ["dep:csv", "zstd", "arrow/csv"]
+csv = ["dep:csv", "zstd"]
 zstd = ["dep:zstd"]
 
 [dependencies]
