@@ -1,3 +1,19 @@
+# v2.1.0
+
+*2026-10-01*
+
+New feature:
+
+* Add TableWriters for plaintext and uncompressed CSV
+
+Fix:
+
+* Remove unused dependency on arrow/csv
+
+Documentation:
+
+* Add docstring to StructArrayBuilder::finish
+
 # v2.0.0
 
 *2025-10-31*
