@@ -115,7 +115,7 @@ where
     ///
     /// When called from a thread holding another reference to a sequential writer
     /// of this dataset.
-    pub fn get_thread_writer(&self) -> Result<RefMut<W>> {
+    pub fn get_thread_writer(&self) -> Result<RefMut<'_, W>> {
         self.writers
             .get_or_try(|| self.get_new_seq_writer())
             .map(|writer| writer.borrow_mut())
