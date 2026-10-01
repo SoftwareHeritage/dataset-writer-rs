@@ -11,8 +11,10 @@ use anyhow::{Context, Result};
 
 use crate::TableWriter;
 
+#[cfg(feature = "zstd")]
 pub type PlainTextZstTableWriter<'a> = BufWriter<zstd::stream::AutoFinishEncoder<'a, File>>;
 
+#[cfg(feature = "zstd")]
 impl TableWriter for PlainTextZstTableWriter<'_> {
     type Schema = ();
     type CloseResult = ();
