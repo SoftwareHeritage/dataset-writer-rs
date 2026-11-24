@@ -1,3 +1,11 @@
+# v2.2.0
+
+*2026-11-24*
+
+New feature:
+
+* Add support for Arrow v58 and v59
+
 # v2.1.0
 
 *2026-10-01*
