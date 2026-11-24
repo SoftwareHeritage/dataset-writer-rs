@@ -75,6 +75,7 @@ impl<Builder: Default + StructArrayBuilder> TableWriter for ParquetTableWriter<B
             // `properties.max_row_group_size()` minus `autoflush_row_group_len` rows between
             // two calls to self.builder() to avoid uneven group sizes. This seems
             // like a safe ratio.
+            #[allow(deprecated)] // Renamed to max_row_group_row_count in v58
             autoflush_row_group_len: autoflush_row_group_len
                 .unwrap_or(properties.max_row_group_size() * 9 / 10),
             autoflush_buffer_size,
