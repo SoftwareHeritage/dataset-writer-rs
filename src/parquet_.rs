@@ -24,11 +24,11 @@ pub struct ParquetTableWriterConfig {
     ///
     /// To avoid uneven row group sizes, this value plus the number of values added
     /// to the builder between calls to [`ParquetTableWriter::builder`] should be equal to
-    /// [`max_row_group_size`](WriterProperties::max_row_group_size)
+    /// [`max_row_group_row_count`](WriterProperties::max_row_group_row_count)
     /// (or a multiple of it).
     ///
-    /// Defaults to [`max_row_group_size`](WriterProperties::max_row_group_size)
-    /// if `None`.
+    /// Defaults to [`max_row_group_row_count`](WriterProperties::max_row_group_row_count)
+    /// if `None`, or 900_000 if `max_row_group_row_count` itself is `None`.
     pub autoflush_row_group_len: Option<usize>,
     /// Automatically flushes the builder to disk when its size (in number of bytes
     /// in the arrays) reaches the value.
@@ -69,15 +69,16 @@ impl<Builder: Default + StructArrayBuilder> TableWriter for ParquetTableWriter<B
     ) -> Result<Self> {
         let base_path = path;
 
+        let max_row_group_row_count = properties.max_row_group_row_count().unwrap_or(1_000_000);
+
         let mut writer = ParquetTableWriter {
             base_path,
             // See above, we need to make sure the user does not write more than
-            // `properties.max_row_group_size()` minus `autoflush_row_group_len` rows between
+            // `properties.max_row_group_row_count()` minus `autoflush_row_group_len` rows between
             // two calls to self.builder() to avoid uneven group sizes. This seems
             // like a safe ratio.
-            #[allow(deprecated)] // Renamed to max_row_group_row_count in v58
             autoflush_row_group_len: autoflush_row_group_len
-                .unwrap_or(properties.max_row_group_size() * 9 / 10),
+                .unwrap_or(max_row_group_row_count * 9 / 10),
             autoflush_buffer_size,
             schema, properties,
             file_writer: None,
